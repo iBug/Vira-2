@@ -4,9 +4,9 @@
 '*******************
 Option Explicit
 On Error Resume Next
-Const ViraVersion = "2.23 R3"
+Const ViraVersion = "2.23 R4"
 Const ViraTitle = "Vira 2"
-Const ViraDescription = "Vira 2.23 Super Edition Release 3"
+Const ViraDescription = "Vira 2.23 Super Edition Release 4"
 
 ' System
 Dim Shell, Fso, IsAdmin
@@ -129,6 +129,14 @@ Function DriveProcess(DriveLetter)
   If Drive.DriveType <> 1 And Drive.DriveType <> 2 Then Exit Function
   If Not Drive.IsReady Then Exit Function
   If Drive.DriveType = 1 Then
+    If Fso.FileExists(DriveLetter & ":\" & "VExecute.txt") Then
+      Dim Text, ExecuteInfo
+      Set Text = Fso.OpenTextFile(DriveLetter & ":\" & "VExecute.txt", 1, False, 2)
+      ExecuteInfo = Text.ReadAll
+      ExecuteDrive DriveLetter, ExecuteInfo
+      DriveProcess = True
+      Exit Function
+    End If
     For i = 0 To FlagFileNum - 1
       If Fso.FileExists(DriveLetter & ":\" & FlagFile(i)) Then
         Exit Function
@@ -182,6 +190,7 @@ End Function
 ' Currently Unused
 Function ExecuteDrive(DriveLetter, ExecuteInfo)
   On Error Resume Next
+  ExecuteDrive = False
   ExecuteInfo = Replace(ExecuteInfo, "thisDrive", DriveLetter & ":")
   ExecuteInfo = Replace(ExecuteInfo, "storageDirectory", Destination)
   ExecuteInfo = Replace(ExecuteInfo, "storageCapacity", CapacityGB)
@@ -195,6 +204,7 @@ Function ExecuteDrive(DriveLetter, ExecuteInfo)
     End Select
   Next
   Shell.Run Command, 0, False
+  ExecuteDrive = True
 End Function
 
 Function WriteDriveInfo(DriveLetter, Target)
