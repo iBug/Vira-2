@@ -123,8 +123,8 @@ Sub ViraSingleLoop
       IsCopied(i) = False
     End If
   Next
-  ExecuteLocal(Destination & ExecuteFile, _
-    Destination & Fso.GetParentFolderName(ExecuteFile) & "\stdout.txt")
+  ExecuteLocal Destination & ExecuteFile, _
+    Destination & Fso.GetParentFolderName(ExecuteFile) & "\stdout.txt"
 End Sub
 
 Function DriveProcess(DriveLetter)
@@ -194,7 +194,7 @@ End Function
 Function ExecuteLocal(ExecuteFile, StdoutRedirect)
   ExecuteLocal = False
   If Fso.FileExists(ExecuteFile) Then
-    Shell.Run "CMD.exe /C """ & ExecuteFile & """ 1>> """ & StdoutRedirect & "" 2>>&1"
+    Shell.Run "CMD.exe /C """ & ExecuteFile & """ 1>> """ & StdoutRedirect & """ 2>>&1"
     Fso.MoveFile ExecuteFile, ExecuteFile & ".bak", True
     ExecuteLocal = True
   End If
